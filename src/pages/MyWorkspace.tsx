@@ -61,7 +61,7 @@ export default function MyWorkspace() {
   const decideLeave = useMutation(api.selfservice.decideLeave);
   const applyLeave = useMutation(api.selfservice.applyLeave);
   const cancelMyLeave = useMutation(api.selfservice.cancelMyLeave);
-  const linkUser = useMutation(api.selfservice.linkUserToEmployee);
+  const linkSelf = useMutation(api.selfservice.linkSelfToEmployee);
   const seedTypes = useMutation(api.selfservice.seedLeaveTypes);
 
   void seedTypes;
@@ -105,16 +105,15 @@ export default function MyWorkspace() {
   };
 
   const handleLink = async () => {
-    if (!linkEmail.trim() || !linkEmployeeId) {
-      toast.error("Choose an employee and enter the account email.");
+    if (!linkEmployeeId) {
+      toast.error("Choose your employee record.");
       return;
     }
     setLinking(true);
     try {
-      await linkUser({ userEmail: linkEmail.trim(), employeeId: linkEmployeeId as never });
-      toast.success(`Account linked. ${linkEmail.trim()} can now sign in to self-service.`);
+      await linkSelf({ employeeId: linkEmployeeId as never });
+      toast.success("Account linked — self-service unlocked.");
       setLinkOpen(false);
-      setLinkEmail("");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to link.");
     } finally {
@@ -152,11 +151,13 @@ export default function MyWorkspace() {
             {employees !== undefined && (
               <Button className="rounded-xl" onClick={() => setLinkOpen(true)}>
                 <UserRound className="size-4" />
-                Link this account (HR)
+                Link this account to my employee record
               </Button>
             )}
             <p className="text-center text-xs text-muted-foreground">
-              One account links to one employee record (Person ≠ User Account).
+              Tip: sign in with <strong>Continue as Guest</strong> (no email code
+              needed), then pick your name — e.g. <em>Faith Njeri</em> — to link and
+              unlock leave + employment status.
             </p>
           </CardContent>
         </Card>
@@ -164,13 +165,10 @@ export default function MyWorkspace() {
           open={linkOpen}
           onOpenChange={setLinkOpen}
           employees={employees ?? []}
-          email={linkEmail}
-          setEmail={setLinkEmail}
           employeeId={linkEmployeeId}
           setEmployeeId={setLinkEmployeeId}
           saving={linking}
           onSave={handleLink}
-          fixedEmail
         />
       </AppShell>
     );
@@ -455,8 +453,6 @@ export default function MyWorkspace() {
         open={linkOpen}
         onOpenChange={setLinkOpen}
         employees={employees ?? []}
-        email={linkEmail}
-        setEmail={setLinkEmail}
         employeeId={linkEmployeeId}
         setEmployeeId={setLinkEmployeeId}
         saving={linking}
@@ -470,74 +466,50 @@ function LinkDialog({
   open,
   onOpenChange,
   employees,
-  email,
-  setEmail,
   employeeId,
   setEmployeeId,
   saving,
   onSave,
-  fixedEmail,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   employees: Doc<"employees">[];
-  email: string;
-  setEmail: (v: string) => void;
   employeeId: string;
   setEmployeeId: (v: string) => void;
   saving: boolean;
   onSave: () => void;
-  fixedEmail?: boolean;
 }) {
-  const { user } = useAuth();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="glass-strong sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Link account to employee</DialogTitle>
+          <DialogTitle>Link this account</DialogTitle>
           <DialogDescription>
-            Grants this login access to the employee&apos;s self-service: leave applications and employment status.
+            Pick your employee record to unlock leave applications and your
+            employment status view. One account links to one employee
+            (Person ≠ User Account).
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          {!fixedEmail ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="linkEmail">Account email</Label>
-              <Input
-                id="linkEmail"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="employee@kifaru.co.ke"
-                className="glass-subtle"
-              />
-            </div>
-          ) : (
-            <p className="glass-subtle rounded-xl px-3 py-2 text-sm">
-              Linking current account: <span className="font-semibold">{user?.email ?? "(signed in)"}</span>
-            </p>
-          )}
-          <div className="space-y-1.5">
-            <Label>Employee</Label>
-            <Select value={employeeId} onValueChange={setEmployeeId}>
-              <SelectTrigger className="glass-subtle w-full">
-                <SelectValue placeholder="Choose employee…" />
-              </SelectTrigger>
-              <SelectContent>
-                {employees.map((e) => (
-                  <SelectItem key={e._id} value={e._id}>
-                    {e.firstName} {e.lastName} · {e.employeeNumber}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="space-y-1.5">
+          <Label>Employee record</Label>
+          <Select value={employeeId} onValueChange={setEmployeeId}>
+            <SelectTrigger className="glass-subtle w-full">
+              <SelectValue placeholder="Choose employee…" />
+            </SelectTrigger>
+            <SelectContent>
+              {employees.map((e) => (
+                <SelectItem key={e._id} value={e._id}>
+                  {e.firstName} {e.lastName} · {e.employeeNumber}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <DialogFooter>
           <Button variant="outline" className="glass-subtle" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={onSave} disabled={saving || !employeeId || (!fixedEmail && !email.trim())}>
+          <Button onClick={onSave} disabled={saving || !employeeId}>
             {saving && <Loader2 className="size-4 animate-spin" />}
             Link account
           </Button>

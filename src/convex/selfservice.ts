@@ -24,6 +24,30 @@ async function requireEmployee(
   return { userId, user, employee };
 }
 
+/**
+ * Resolve the signed-in user's linked employee, or null when the account is
+ * not linked. Queries use this to degrade gracefully (no crash for HR/admin
+ * accounts that aren't employees); mutations throw instead.
+ */
+async function getLinkedEmployee(
+  ctx: { db: { get(id: unknown): Promise<unknown> } },
+): Promise<{
+  user: { _id: unknown; email?: string; employeeId?: unknown };
+  employee: Doc<"employees">;
+} | null> {
+  const userId = await getAuthUserId(ctx as never);
+  if (!userId) return null;
+  const user = (await ctx.db.get(userId)) as {
+    _id: unknown;
+    email?: string;
+    employeeId?: unknown;
+  } | null;
+  if (!user?.employeeId) return null;
+  const employee = (await ctx.db.get(user.employeeId)) as Doc<"employees"> | null;
+  if (!employee) return null;
+  return { user, employee };
+}
+
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -94,7 +118,9 @@ async function ensureBalance(
 export const myLeaveBalances = query({
   args: {},
   handler: async (ctx) => {
-    const { employee } = await requireEmployee(ctx);
+    const linked = await getLinkedEmployee(ctx);
+    if (!linked) return [];
+    const { employee } = linked;
     const year = new Date().getUTCFullYear();
     const types = await ctx.db.query("leaveTypes").collect();
     const balances = [];
@@ -114,7 +140,9 @@ export const myLeaveBalances = query({
 export const myLeaveRequests = query({
   args: {},
   handler: async (ctx) => {
-    const { employee } = await requireEmployee(ctx);
+    const linked = await getLinkedEmployee(ctx);
+    if (!linked) return [];
+    const { employee } = linked;
     const rows = await ctx.db
       .query("leaveRequests")
       .withIndex("by_employee", (q) => q.eq("employeeId", employee._id))
@@ -127,8 +155,10 @@ export const myLeaveRequests = query({
 export const myEmploymentStatus = query({
   args: {},
   handler: async (ctx) => {
-    const { user, employee } = await requireEmployee(ctx);
-    const dept = await ctx.db.get(employee.departmentId);
+    const linked = await getLinkedEmployee(ctx);
+    if (!linked) return null;
+    const { user, employee } = linked;
+    const dept = (await ctx.db.get(employee.departmentId)) as Doc<"departments"> | null;
     const events = await ctx.db
       .query("employeeEvents")
       .withIndex("by_employee", (q) => q.eq("employeeId", employee._id))
@@ -341,6 +371,36 @@ export const decideLeave = mutation({
     }
 
     return args.requestId;
+  },
+});
+
+/** Link the CURRENTLY signed-in account (email or guest) to an employee. */
+export const linkSelfToEmployee = mutation({
+  args: {
+    employeeId: v.id("employees"),
+    actorName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Unauthenticated");
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("Unauthenticated");
+
+    const employee = await ctx.db.get(args.employeeId);
+    if (!employee) throw new Error("Employee not found.");
+
+    const allUsers = await ctx.db.query("users").collect();
+    const clash = allUsers.find(
+      (u) => u.employeeId === args.employeeId && u._id !== user._id,
+    );
+    if (clash) {
+      throw new Error(
+        `Employee already linked to another account (${clash.email ?? clash._id}).`,
+      );
+    }
+
+    await ctx.db.patch(user._id, { employeeId: args.employeeId });
+    return user._id;
   },
 });
 
