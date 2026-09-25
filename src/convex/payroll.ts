@@ -418,8 +418,9 @@ export const periodFlags = query({
 });
 
 /**
- * Record an HR decision on a flagged record: go_ahead | hold | review.
- * Purely a human action (P4) — the engine never resolves its own flags.
+ * Record (or change) an HR decision on a flagged record: go_ahead | hold | review.
+ * Purely a human action (P4). Decisions stay editable until the period is
+ * approved/locked, so a hold can be resolved after the underlying issue is fixed.
  */
 export const decideFlag = mutation({
   args: {
@@ -436,7 +437,6 @@ export const decideFlag = mutation({
     await requireUser(ctx);
     const flag = await ctx.db.get(args.flagId);
     if (!flag) throw new Error("Flag not found.");
-    if (flag.status !== "pending") throw new Error("Flag already decided.");
 
     // Period must still be open for decisions (not approved/locked)
     const period = await ctx.db.get(flag.periodId);
@@ -444,16 +444,29 @@ export const decideFlag = mutation({
       throw new Error("Period already approved or locked.");
     }
 
+    const changed = flag.status !== args.decision;
     await ctx.db.patch(args.flagId, {
       status: args.decision,
       decidedBy: args.actorName ?? "HR team",
       decidedAt: once(),
-      note: args.note?.trim() || undefined,
+      note:
+        args.note?.trim() ||
+        (changed && flag.status !== "pending"
+          ? `${flag.status.replace("_", " ")} → ${args.decision.replace("_", " ")}`
+          : flag.note),
     });
 
-    // "Hold" moves the period to UNDER_REVIEW so approval is blocked
-    if (args.decision === "hold" && period.status === "CALCULATED") {
+    // Keep the period status consistent with holds:
+    // any hold ⇒ UNDER_REVIEW; last hold cleared ⇒ back to CALCULATED.
+    const flags = await ctx.db
+      .query("payrollFlags")
+      .withIndex("by_period", (q) => q.eq("periodId", flag.periodId))
+      .collect();
+    const holdsLeft = flags.filter((f) => f.status === "hold").length;
+    if (holdsLeft > 0 && period.status === "CALCULATED") {
       await ctx.db.patch(period._id, { status: "UNDER_REVIEW" });
+    } else if (holdsLeft === 0 && period.status === "UNDER_REVIEW") {
+      await ctx.db.patch(period._id, { status: "CALCULATED" });
     }
     return args.flagId;
   },

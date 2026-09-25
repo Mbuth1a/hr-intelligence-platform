@@ -385,30 +385,41 @@ export default function Payroll() {
                       </div>
                       <p className="mt-0.5 text-sm text-muted-foreground">{f.reason}</p>
                     </div>
-                    {f.status === "pending" && selected.status !== "LOCKED" && selected.status !== "APPROVED" ? (
-                      <div className="flex shrink-0 gap-1.5">
-                        <Button size="sm" className="rounded-xl" onClick={() => doDecide(f._id, "go_ahead")}>
-                          <CheckCircle2 className="size-3.5" />
-                          Go ahead
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="rounded-xl"
-                          onClick={() => doDecide(f._id, "review")}
-                        >
-                          <Eye className="size-3.5" />
-                          Review
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="rounded-xl border-rose-300 text-rose-600 hover:bg-rose-50"
-                          onClick={() => doDecide(f._id, "hold")}
-                        >
-                          <Ban className="size-3.5" />
-                          Hold
-                        </Button>
+                    {selected.status !== "LOCKED" && selected.status !== "APPROVED" ? (
+                      <div className="flex shrink-0 flex-col items-end gap-1">
+                        <div className="flex gap-1.5">
+                          <Button
+                            size="sm"
+                            variant={f.status === "go_ahead" ? "default" : "outline"}
+                            className="rounded-xl"
+                            onClick={() => doDecide(f._id, "go_ahead")}
+                            disabled={f.status === "go_ahead"}
+                          >
+                            <CheckCircle2 className="size-3.5" />
+                            Go ahead
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={f.status === "review" ? "default" : "outline"}
+                            className="rounded-xl"
+                            onClick={() => doDecide(f._id, "review")}
+                            disabled={f.status === "review"}
+                          >
+                            <Eye className="size-3.5" />
+                            Review
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={f.status === "hold" ? "destructive" : "outline"}
+                            className={f.status === "hold" ? "rounded-xl" : "rounded-xl border-rose-300 text-rose-600 hover:bg-rose-50"}
+                            onClick={() => doDecide(f._id, "hold")}
+                            disabled={f.status === "hold"}
+                          >
+                            <Ban className="size-3.5" />
+                            Hold
+                          </Button>
+                        </div>
+                        {f.note && <p className="text-[11px] text-muted-foreground">{f.note}</p>}
                       </div>
                     ) : (
                       f.note && <p className="shrink-0 text-xs text-muted-foreground">{f.note}</p>
