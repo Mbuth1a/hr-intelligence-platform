@@ -197,6 +197,28 @@ const schema = defineSchema(
       .index("by_period", ["periodId"])
       .index("by_reference", ["reference"])
       .index("by_employee", ["employeeId"]),
+
+    // Flagged records requiring HR action (spec §42 + P4 — human approval)
+    payrollFlags: defineTable({
+      periodId: v.id("payrollPeriods"),
+      periodLabel: v.string(),
+      employeeId: v.id("employees"),
+      employeeNumber: v.string(),
+      employeeName: v.string(),
+      reason: v.string(),
+      severity: v.union(v.literal("warning"), v.literal("blocking")),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("go_ahead"),
+        v.literal("hold"),
+        v.literal("review"),
+      ),
+      decidedBy: v.optional(v.string()),
+      decidedAt: v.optional(v.number()),
+      note: v.optional(v.string()),
+    })
+      .index("by_period", ["periodId"])
+      .index("by_status", ["status"]),
   },
   {
     schemaValidation: false,

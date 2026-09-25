@@ -204,10 +204,17 @@ export const runPeriod = mutation({
     const staff = employees.filter((e) => e.status !== "offboarded");
     if (staff.length === 0) throw new Error("No active employees to pay.");
 
-    // Validation phase (spec §42)
+    // Validation phase (spec §42) + flag generation (P4 — human approval)
     const blockingErrors: string[] = [];
     const warnings: string[] = [];
     const calcs = [];
+    const flags: {
+      employeeId: string;
+      employeeNumber: string;
+      employeeName: string;
+      reason: string;
+      severity: "warning" | "blocking";
+    }[] = [];
 
     for (const e of staff) {
       const calc = calcEmployeePayroll(
@@ -225,11 +232,53 @@ export const runPeriod = mutation({
         rules,
       );
       calcs.push(calc);
-      if (calc.netPay < 0) blockingErrors.push(`${calc.name}: negative net pay`);
+      if (calc.netPay < 0) {
+        blockingErrors.push(`${calc.name}: negative net pay`);
+        flags.push({
+          employeeId: e._id,
+          employeeNumber: e.employeeNumber,
+          employeeName: calc.name,
+          reason: "Negative net pay after statutory deductions",
+          severity: "blocking",
+        });
+      }
       if (!e.email.includes("@")) {
         blockingErrors.push(`${calc.name}: invalid email on record`);
+        flags.push({
+          employeeId: e._id,
+          employeeNumber: e.employeeNumber,
+          employeeName: calc.name,
+          reason: "Invalid email on record",
+          severity: "blocking",
+        });
       }
-      for (const w of calc.warnings) warnings.push(`${calc.name}: ${w}`);
+      for (const w of calc.warnings) {
+        warnings.push(`${calc.name}: ${w}`);
+        flags.push({
+          employeeId: e._id,
+          employeeNumber: e.employeeNumber,
+          employeeName: calc.name,
+          reason: w,
+          severity: "warning",
+        });
+      }
+      // Salary variance flag: >±40% from department average needs HR eyes
+      const deptStaff = staff.filter((x) => x.departmentId === e.departmentId);
+      if (deptStaff.length >= 3) {
+        const avg = deptStaff.reduce((s, x) => s + x.monthlyGrossSalary, 0) / deptStaff.length;
+        const dev = Math.abs(e.monthlyGrossSalary - avg) / avg;
+        if (dev > 0.4) {
+          const reason = `Salary deviates ${Math.round(dev * 100)}% from department average`;
+          warnings.push(`${calc.name}: ${reason}`);
+          flags.push({
+            employeeId: e._id,
+            employeeNumber: e.employeeNumber,
+            employeeName: calc.name,
+            reason,
+            severity: "warning",
+        });
+        }
+      }
     }
 
     const report = {
@@ -309,11 +358,112 @@ export const runPeriod = mutation({
       },
     });
 
-    return { periodId, report };
+    // Persist HR action flags for this run (replace previous set for the period)
+    const oldFlags = await ctx.db
+      .query("payrollFlags")
+      .withIndex("by_period", (q) => q.eq("periodId", periodId))
+      .collect();
+    const decided: Record<string, string> = {};
+    for (const f of oldFlags) {
+      if (f.status !== "pending") {
+        decided[`${f.employeeNumber}::${f.reason}`] = f.status;
+        decided[`${f.employeeNumber}::${f.reason}::by`] = f.decidedBy ?? "";
+      }
+      await ctx.db.delete(f._id);
+    }
+    for (const f of flags) {
+      const key = `${f.employeeNumber}::${f.reason}`;
+      const prev = decided[key];
+      await ctx.db.insert("payrollFlags", {
+        periodId,
+        periodLabel: label,
+        employeeId: f.employeeId as never,
+        employeeNumber: f.employeeNumber,
+        employeeName: f.employeeName,
+        reason: f.reason,
+        severity: f.severity,
+        status: (prev as "go_ahead") ?? "pending",
+        decidedBy: prev ? decided[`${key}::by`] : undefined,
+        decidedAt: prev ? Date.now() : undefined,
+      });
+    }
+
+    return {
+      periodId,
+      report: {
+        ...report,
+        flagsCreated: flags.length,
+        flagsCarriedDecisions: Object.keys(decided).filter((k) => !k.endsWith("::by")).length,
+      },
+    };
   },
 });
 
-/** Approve a calculated period. Blocked while blocking errors exist (BR-001). */
+/** Flag decisions for one period. */
+export const periodFlags = query({
+  args: { periodId: v.id("payrollPeriods") },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    const flags = await ctx.db
+      .query("payrollFlags")
+      .withIndex("by_period", (q) => q.eq("periodId", args.periodId))
+      .collect();
+    const order = { blocking: 0, warning: 1 } as const;
+    return flags.sort(
+      (a, b) =>
+        order[a.severity] - order[b.severity] ||
+        a.employeeNumber.localeCompare(b.employeeNumber),
+    );
+  },
+});
+
+/**
+ * Record an HR decision on a flagged record: go_ahead | hold | review.
+ * Purely a human action (P4) — the engine never resolves its own flags.
+ */
+export const decideFlag = mutation({
+  args: {
+    flagId: v.id("payrollFlags"),
+    decision: v.union(
+      v.literal("go_ahead"),
+      v.literal("hold"),
+      v.literal("review"),
+    ),
+    note: v.optional(v.string()),
+    actorName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    const flag = await ctx.db.get(args.flagId);
+    if (!flag) throw new Error("Flag not found.");
+    if (flag.status !== "pending") throw new Error("Flag already decided.");
+
+    // Period must still be open for decisions (not approved/locked)
+    const period = await ctx.db.get(flag.periodId);
+    if (!period || period.status === "APPROVED" || period.status === "LOCKED") {
+      throw new Error("Period already approved or locked.");
+    }
+
+    await ctx.db.patch(args.flagId, {
+      status: args.decision,
+      decidedBy: args.actorName ?? "HR team",
+      decidedAt: once(),
+      note: args.note?.trim() || undefined,
+    });
+
+    // "Hold" moves the period to UNDER_REVIEW so approval is blocked
+    if (args.decision === "hold" && period.status === "CALCULATED") {
+      await ctx.db.patch(period._id, { status: "UNDER_REVIEW" });
+    }
+    return args.flagId;
+  },
+});
+
+function once(): number {
+  return Date.now();
+}
+
+/** Approve a calculated period (BR-001 + P4: all flags decided, none on hold). */
 export const approvePeriod = mutation({
   args: { periodId: v.id("payrollPeriods"), actorName: v.optional(v.string()) },
   handler: async (ctx, args) => {
@@ -334,10 +484,28 @@ export const approvePeriod = mutation({
       );
     }
 
+    // Every flag must have an explicit HR decision (go ahead / hold / review)
+    const flags = await ctx.db
+      .query("payrollFlags")
+      .withIndex("by_period", (q) => q.eq("periodId", args.periodId))
+      .collect();
+    const pending = flags.filter((f) => f.status === "pending");
+    if (pending.length > 0) {
+      throw new Error(
+        `Cannot approve: ${pending.length} flagged record(s) awaiting HR decision (go ahead, hold or review).`,
+      );
+    }
+    const held = flags.filter((f) => f.status === "hold");
+    if (held.length > 0) {
+      throw new Error(
+        `Cannot approve: ${held.length} flagged record(s) are on hold. Resolve holds first.`,
+      );
+    }
+
     await ctx.db.patch(args.periodId, {
       status: "APPROVED",
       approvedBy: args.actorName ?? "HR team",
-      approvedAt: Date.now(),
+      approvedAt: once(),
     });
     return args.periodId;
   },

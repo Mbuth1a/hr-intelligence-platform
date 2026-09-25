@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatKES } from "@/lib/format";
-import { AlertTriangle, Ban, CalendarRange, CheckCircle2, FileSpreadsheet, Loader2, Lock, Play, Wallet } from "lucide-react";
+import { AlertTriangle, Ban, CalendarRange, CheckCircle2, Eye, FileSpreadsheet, Flag, Loader2, Lock, Play, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -53,10 +53,15 @@ export default function Payroll() {
     api.payroll.journal,
     selected ? { periodId: selected._id } : "skip",
   );
+  const flags = useQuery(
+    api.payroll.periodFlags,
+    selected ? { periodId: selected._id } : "skip",
+  );
 
   const runPeriod = useMutation(api.payroll.runPeriod);
   const approvePeriod = useMutation(api.payroll.approvePeriod);
   const lockPeriod = useMutation(api.payroll.lockPeriod);
+  const decideFlag = useMutation(api.payroll.decideFlag);
 
   const [runOpen, setRunOpen] = useState(false);
   const [runLabel, setRunLabel] = useState(ym(new Date()));
@@ -102,6 +107,24 @@ export default function Payroll() {
       toast.success(`Payroll for ${selected.periodLabel} locked. Results are now immutable.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to lock.");
+    }
+  };
+
+  const doDecide = async (
+    flagId: Id<"payrollFlags">,
+    decision: "go_ahead" | "hold" | "review",
+  ) => {
+    try {
+      await decideFlag({ flagId, decision, actorName: actor });
+      toast.success(
+        decision === "go_ahead"
+          ? "Approved to proceed."
+          : decision === "hold"
+            ? "Flagged on hold — approval now blocked until resolved."
+            : "Marked for review.",
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to record decision.");
     }
   };
 
@@ -247,6 +270,11 @@ export default function Payroll() {
                     <CheckCircle2 className="size-4" />
                     Approve
                   </Button>
+                  {flags && flags.some((f) => f.status === "pending") && (
+                    <span className="ml-2 self-center text-xs font-medium text-amber-600">
+                      {flags.filter((f) => f.status === "pending").length} flagged record(s) awaiting HR decision
+                    </span>
+                  )}
                   <Button className="rounded-xl" onClick={doLock} disabled={!canLock}>
                     <Lock className="size-4" />
                     Lock period
@@ -292,6 +320,104 @@ export default function Payroll() {
               </CardContent>
             </Card>
           </div>
+
+          {/* HR action queue — flagged records */}
+          {flags && flags.length > 0 && (
+            <Card className="mt-4">
+              <CardHeader className="flex-row items-start justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Flag className="size-4 text-amber-500" />
+                    Flagged records — HR action required
+                  </CardTitle>
+                  <CardDescription>
+                    Every flag needs an explicit decision (go ahead, hold or review) before this payroll can be approved.
+                  </CardDescription>
+                </div>
+                <div className="flex gap-1.5">
+                  {[
+                    { key: "pending", tone: "bg-amber-500/15 text-amber-700" },
+                    { key: "hold", tone: "bg-rose-500/15 text-rose-700" },
+                    { key: "review", tone: "bg-sky-500/15 text-sky-700" },
+                    { key: "go_ahead", tone: "bg-emerald-500/15 text-emerald-700" },
+                  ].map(({ key, tone }) => {
+                    const n = flags.filter((f) => f.status === key).length;
+                    return (
+                      <Badge key={key} variant="outline" className={`rounded-full border-0 ${tone}`}>
+                        {key.replace("_", " ")}: {n}
+                      </Badge>
+                   );
+                  })}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2.5">
+                {flags.map((f) => (
+                  <div
+                    key={f._id}
+                    className={`glass-subtle flex flex-col gap-3 rounded-2xl p-4 sm:flex-row sm:items-center ${
+                      f.status === "hold" ? "ring-1 ring-rose-400/50" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-semibold">{f.employeeName}</p>
+                        <span className="text-xs text-muted-foreground">{f.employeeNumber}</span>
+                        {f.severity === "blocking" ? (
+                          <Badge className="rounded-full bg-destructive/12 text-destructive">blocking</Badge>
+                        ) : (
+                          <Badge variant="outline" className="rounded-full bg-white/60">warning</Badge>
+                        )}
+                        {f.status !== "pending" && (
+                          <Badge
+                            variant="outline"
+                            className={`rounded-full border-0 ${
+                              f.status === "go_ahead"
+                                ? "bg-emerald-500/15 text-emerald-700"
+                                : f.status === "hold"
+                                  ? "bg-rose-500/15 text-rose-700"
+                                  : "bg-sky-500/15 text-sky-700"
+                            }`}
+                          >
+                            {f.status.replace("_", " ")}
+                            {f.decidedBy ? ` · ${f.decidedBy}` : ""}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-sm text-muted-foreground">{f.reason}</p>
+                    </div>
+                    {f.status === "pending" && selected.status !== "LOCKED" && selected.status !== "APPROVED" ? (
+                      <div className="flex shrink-0 gap-1.5">
+                        <Button size="sm" className="rounded-xl" onClick={() => doDecide(f._id, "go_ahead")}>
+                          <CheckCircle2 className="size-3.5" />
+                          Go ahead
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl"
+                          onClick={() => doDecide(f._id, "review")}
+                        >
+                          <Eye className="size-3.5" />
+                          Review
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl border-rose-300 text-rose-600 hover:bg-rose-50"
+                          onClick={() => doDecide(f._id, "hold")}
+                        >
+                          <Ban className="size-3.5" />
+                          Hold
+                        </Button>
+                      </div>
+                    ) : (
+                      f.note && <p className="shrink-0 text-xs text-muted-foreground">{f.note}</p>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Payslips table */}
           <Card className="mt-4 overflow-hidden py-0">
