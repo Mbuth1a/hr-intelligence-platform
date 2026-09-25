@@ -58,15 +58,13 @@ export function CopilotPanel({ onClose }: { onClose: () => void }) {
         { role: "assistant", content: res.answer },
       ]);
     } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      const msg = /unauthor|invalid token|401/i.test(raw)
+        ? "The platform's built-in AI gateway isn't accepting this deployment's key. Add an ANTHROPIC_API_KEY (or OPENAI_API_KEY) in the project's Keys/API keys tab and the copilot will use it automatically."
+        : raw;
       setMessages((m) => [
         ...m,
-        {
-          role: "assistant",
-          content:
-            err instanceof Error
-              ? `⚠ ${err.message}`
-              : "⚠ Something went wrong. Please try again.",
-        },
+        { role: "assistant", content: `⚠ ${msg}` },
       ]);
     } finally {
       setBusy(false);

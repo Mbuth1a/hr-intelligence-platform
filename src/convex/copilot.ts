@@ -2,10 +2,11 @@
 
 import { v } from "convex/values";
 import { action } from "./_generated/server";
-import { internalQuery } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { vly } from "../lib/vly-integrations";
 import { getAuthUserId } from "@convex-dev/auth/server";
+
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
 type CopilotContext = {
   asOfDate: string;
@@ -57,6 +58,95 @@ type CopilotContext = {
   }[];
 };
 
+// ---------------------------------------------------------------------------
+// LLM providers — first available wins.
+// Keys come from the project's Keys/API keys tab (never hard-coded).
+// ---------------------------------------------------------------------------
+
+async function anthropicComplete(
+  apiKey: string,
+  system: string,
+  messages: ChatMessage[],
+): Promise<string> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "claude-3-5-haiku-latest",
+      max_tokens: 900,
+      system,
+      messages: messages
+        .filter((m) => m.role !== "system")
+        .map((m) => ({ role: m.role, content: m.content })),
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Anthropic API error ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as {
+    content?: { type: string; text?: string }[];
+  };
+  const text = (data.content ?? [])
+    .filter((c) => c.type === "text")
+    .map((c) => c.text ?? "")
+    .join("")
+    .trim();
+  if (!text) throw new Error("Anthropic returned an empty answer.");
+  return text;
+}
+
+async function openaiComplete(
+  apiKey: string,
+  messages: ChatMessage[],
+): Promise<string> {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages,
+      max_tokens: 900,
+      temperature: 0.2,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`OpenAI API error ${res.status}: ${body.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  const text = data.choices?.[0]?.message?.content?.trim();
+  if (!text) throw new Error("OpenAI returned an empty answer.");
+  return text;
+}
+
+async function vlyGatewayComplete(
+  messages: ChatMessage[],
+): Promise<string> {
+  const result = await vly.ai.completion({
+    messages,
+    temperature: 0.2,
+    maxTokens: 900,
+  });
+  if (!result.success || !result.data) {
+    throw new Error(
+      result.error ?? "The AI service is unavailable. Please try again.",
+    );
+  }
+  const text = result.data.choices?.[0]?.message?.content?.trim();
+  if (!text) throw new Error("The AI returned an empty answer.");
+  return text;
+}
+
 /** Single chat turn: authorized → validated analytics context → LLM → answer. */
 export const askCopilot = action({
   args: {
@@ -97,39 +187,31 @@ export const askCopilot = action({
       "Answer in 2-5 short paragraphs maximum, or a compact bullet list. Be direct and executive-ready.",
     ].join(" ");
 
-    const contextJson = JSON.stringify(context);
-
-    const messages: {
-      role: "system" | "user" | "assistant";
-      content: string;
-    }[] = [
+    const messages: ChatMessage[] = [
       { role: "system", content: system },
       {
         role: "user",
         content:
           "WORKFORCE ANALYTICS CONTEXT (authoritative JSON):\n" +
-          contextJson +
+          JSON.stringify(context) +
           "\n\nUse this data to answer the user's question below.",
       },
       ...(args.history ?? []).slice(-6),
       { role: "user", content: question },
     ];
 
-    const result = await vly.ai.completion({
-      model: "gpt-4o-mini",
-      messages,
-      temperature: 0.2,
-      maxTokens: 900,
-    });
+    // Provider preference: user-provided Anthropic key → OpenAI key → platform gateway
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const openaiKey = process.env.OPENAI_API_KEY;
 
-    if (!result.success || !result.data) {
-      throw new Error(
-        result.error ?? "The AI service is unavailable. Please try again.",
-      );
+    let answer: string;
+    if (anthropicKey) {
+      answer = await anthropicComplete(anthropicKey, system, messages);
+    } else if (openaiKey) {
+      answer = await openaiComplete(openaiKey, messages);
+    } else {
+      answer = await vlyGatewayComplete(messages);
     }
-
-    const answer = result.data.choices?.[0]?.message?.content?.trim();
-    if (!answer) throw new Error("The AI returned an empty answer.");
 
     return { answer };
   },
