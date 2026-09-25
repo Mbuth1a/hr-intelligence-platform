@@ -404,6 +404,19 @@ export const linkSelfToEmployee = mutation({
   },
 });
 
+/** Persist the sign-up role choice (employee | hr) on the current account. */
+export const setMyAppRole = mutation({
+  args: { appRole: v.union(v.literal("employee"), v.literal("hr")) },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Unauthenticated");
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("Unauthenticated");
+    await ctx.db.patch(user._id, { appRole: args.appRole });
+    return user._id;
+  },
+});
+
 /** HR: link a user account (by email) to an employee record. */
 export const linkUserToEmployee = mutation({
   args: {

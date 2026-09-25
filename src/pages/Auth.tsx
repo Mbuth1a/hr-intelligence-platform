@@ -15,9 +15,18 @@ import {
 } from "@/components/ui/input-otp";
 
 import { useAuth } from "@/hooks/use-auth";
+import { api } from "@/convex/_generated/api";
 import logo from "@/assets/logo.svg";
-import { ArrowRight, Loader2, Mail, UserX } from "lucide-react";
+import {
+  ArrowRight,
+  Loader2,
+  Mail,
+  ShieldCheck,
+  UserRound,
+  UserX,
+} from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
+import { useMutation } from "convex/react";
 import { useNavigate, useSearchParams } from "react-router";
 
 interface AuthProps {
@@ -46,19 +55,30 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [otp, setOtp] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Sign-up role choice: Employee or HR (persisted on the user document).
+  const [role, setRole] = useState<"employee" | "hr">("hr");
+  const setAppRole = useMutation(api.selfservice.setMyAppRole);
 
   useEffect(() => {
     if (authLoading || !isAuthenticated) return;
     if (user === undefined) return; // wait for the user document to load
 
-    // Linked employees go straight to their own dashboard unless a specific
-    // returnTo destination was requested (spec §35 — employee self-service).
-    if (user && user.employeeId && !searchParams.get("returnTo")) {
+    // A specific returnTo destination always wins.
+    if (searchParams.get("returnTo")) {
+      navigate(redirect, { replace: true });
+      return;
+    }
+    // Role-aware landing: linked employees and Employee-role sign-ups go
+    // straight to self-service (spec §35); HR-role sign-ups land on the
+    // company overview. Both this session's choice and a previously saved
+    // role are honoured so returning users keep their landing page.
+    const isEmployeeView = role === "employee" || user?.appRole === "employee";
+    if (user?.employeeId || isEmployeeView) {
       navigate("/my", { replace: true });
       return;
     }
     navigate(redirect, { replace: true });
-  }, [authLoading, isAuthenticated, user, navigate, redirect, searchParams]);
+  }, [authLoading, isAuthenticated, user, navigate, redirect, searchParams, role]);
   const handleEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
@@ -86,7 +106,13 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     try {
       const formData = new FormData(event.currentTarget);
       await signIn("email-otp", formData);
-      // Routing is handled by the effect above once the user doc loads.
+      // Persist the role chosen on the sign-in card; the redirect effect
+      // routes Employee → /my and HR → /dashboard.
+      try {
+        await setAppRole({ appRole: role });
+      } catch (roleError) {
+        console.error("Failed to save role:", roleError);
+      }
     } catch (error) {
       console.error("OTP verification error:", error);
 
@@ -104,6 +130,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       console.log("Attempting anonymous sign in...");
       await signIn("anonymous");
       console.log("Anonymous sign in successful");
+      try {
+        await setAppRole({ appRole: role });
+      } catch (roleError) {
+        console.error("Failed to save role:", roleError);
+      }
       // Routing is handled by the effect above once the user doc loads.
     } catch (error) {
       console.error("Guest login error:", error);
@@ -136,11 +167,50 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   </div>
                 <CardTitle className="text-xl">Get Started</CardTitle>
                 <CardDescription>
-                  Enter your email to log in or sign up
+                  Choose your role, then enter your email to log in or sign up
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleEmailSubmit}>
                 <CardContent>
+                  <div className="mb-4">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      I am signing up as
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        aria-pressed={role === "hr"}
+                        onClick={() => setRole("hr")}
+                        className={`flex flex-col items-center gap-1 rounded-xl px-3 py-3 text-center transition ${
+                          role === "hr"
+                            ? "border border-primary/50 bg-primary/10 text-primary shadow-sm"
+                            : "glass-subtle text-muted-foreground hover:bg-white/70"
+                        }`}
+                      >
+                        <ShieldCheck className="size-5" />
+                        <span className="text-sm font-semibold">HR</span>
+                        <span className="text-[11px] leading-tight">
+                          People, payroll &amp; approvals
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={role === "employee"}
+                        onClick={() => setRole("employee")}
+                        className={`flex flex-col items-center gap-1 rounded-xl px-3 py-3 text-center transition ${
+                          role === "employee"
+                            ? "border border-primary/50 bg-primary/10 text-primary shadow-sm"
+                            : "glass-subtle text-muted-foreground hover:bg-white/70"
+                        }`}
+                      >
+                        <UserRound className="size-5" />
+                        <span className="text-sm font-semibold">Employee</span>
+                        <span className="text-[11px] leading-tight">
+                          Payslips &amp; leave requests
+                        </span>
+                      </button>
+                    </div>
+                  </div>
                   
                   <div className="relative flex items-center gap-2">
                     <div className="relative flex-1">

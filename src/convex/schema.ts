@@ -70,6 +70,10 @@ const schema = defineSchema(
       emailVerificationTime: v.optional(v.number()),
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
+      // Sign-up role choice (spec: "the sign up should include 2 Roles
+      // options, employee and HR"). Drives post-auth routing and nav defaults;
+      // separate from the template `role` (admin/user/member) which is unused.
+      appRole: v.optional(v.union(v.literal("employee"), v.literal("hr"))),
       // Login ↔ employee linkage (spec §7: Person ≠ User Account, but a user
       // account can be granted access to an employee self-service record)
       employeeId: v.optional(v.id("employees")),
