@@ -70,6 +70,9 @@ const schema = defineSchema(
       emailVerificationTime: v.optional(v.number()),
       isAnonymous: v.optional(v.boolean()),
       role: v.optional(roleValidator),
+      // Login ↔ employee linkage (spec §7: Person ≠ User Account, but a user
+      // account can be granted access to an employee self-service record)
+      employeeId: v.optional(v.id("employees")),
     }).index("email", ["email"]),
 
     // Organizational unit (v1: departments within one legal entity)
@@ -218,6 +221,50 @@ const schema = defineSchema(
       note: v.optional(v.string()),
     })
       .index("by_period", ["periodId"])
+      .index("by_status", ["status"]),
+
+    // ---------------- Self-service (spec §28, §35) ----------------
+
+    // Leave types are configurable (spec §28)
+    leaveTypes: defineTable({
+      name: v.string(),
+      code: v.string(),
+      annualEntitlementDays: v.number(),
+      maxCarryForwardDays: v.number(),
+      requiresProbationWait: v.boolean(),
+    }).index("by_code", ["code"]),
+
+    // Leave balances, computed from requests + accrual (spec §29)
+    leaveBalances: defineTable({
+      employeeId: v.id("employees"),
+      year: v.number(),
+      leaveTypeCode: v.string(),
+      entitled: v.number(),
+      carriedForward: v.number(),
+      daysTaken: v.number(),
+    })
+      .index("by_employee_year", ["employeeId", "year"])
+      .index("by_employee_type", ["employeeId", "leaveTypeCode"]),
+
+    // Leave requests: employee → balance validation → manager/HR → calendar (spec §28)
+    leaveRequests: defineTable({
+      employeeId: v.id("employees"),
+      leaveTypeCode: v.string(),
+      startDate: v.string(), // ISO
+      endDate: v.string(), // ISO inclusive
+      days: v.number(),
+      reason: v.optional(v.string()),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("approved"),
+        v.literal("rejected"),
+        v.literal("cancelled"),
+      ),
+      decidedBy: v.optional(v.string()),
+      decidedAt: v.optional(v.number()),
+      decisionNote: v.optional(v.string()),
+    })
+      .index("by_employee", ["employeeId"])
       .index("by_status", ["status"]),
   },
   {
