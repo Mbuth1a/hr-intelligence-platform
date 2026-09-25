@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import kifaruLogo from "@/assets/kifaru-logo.svg";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Sparkles, Users } from "lucide-react";
+import { LogOut, Sparkles, Users, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -88,6 +88,17 @@ export function AppShell({ children }: { children: ReactNode }) {
                 Employees
               </Link>
             </Button>
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 rounded-xl text-muted-foreground hover:text-foreground"
+            >
+              <Link to="/payroll">
+                <Wallet className="size-4" />
+                Payroll
+              </Link>
+            </Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -115,6 +126,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/employees">Employee records</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/payroll">Payroll</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

@@ -183,7 +183,8 @@ export const askCopilot = action({
       "If the context does not contain the answer, say so plainly and suggest what data would be needed.",
       "Never invent employees, departments, salaries or events.",
       "Business rules you must respect: AI may inform but never make consequential employment decisions (e.g. never recommend firing someone).",
-      "When asked about efficiency or performance, remember the data available is: salary, tenure, department, contract type, status, and change history; performance scores are not in scope yet.",
+      "When asked about efficiency or performance, remember the data available is: salary, tenure, department, contract type, status, change history, and processed payroll runs (gross, net, PAYE, NSSF, SHIF, AHL per period); performance scores are not in scope yet.",
+      "payrollHistory in the context contains ACTUAL processed payroll periods with status; use it to answer questions about payroll movements month over month, statutory deductions and employer cost.",
       "Answer in 2-5 short paragraphs maximum, or a compact bullet list. Be direct and executive-ready.",
     ].join(" ");
 

@@ -113,6 +113,90 @@ const schema = defineSchema(
       newValue: v.optional(v.string()),
       actorName: v.optional(v.string()),
     }).index("by_employee", ["employeeId"]),
+
+    // ---------------- Payroll (spec §37–48) ----------------
+
+    // Versioned, effective-dated statutory rules (BR-007)
+    statutoryRules: defineTable({
+      version: v.number(),
+      jurisdiction: v.string(),
+      effectiveFrom: v.string(),
+      packageJson: v.string(), // serialized StatutoryRulePackage
+    }).index("by_version", ["version"]),
+
+    // Payroll periods (spec §38)
+    payrollPeriods: defineTable({
+      periodLabel: v.string(), // e.g. "2026-08"
+      startDate: v.string(),
+      endDate: v.string(),
+      payDate: v.string(),
+      frequency: v.literal("monthly"),
+      status: v.union(
+        v.literal("OPEN"),
+        v.literal("CALCULATED"),
+        v.literal("UNDER_REVIEW"),
+        v.literal("APPROVED"),
+        v.literal("LOCKED"),
+      ),
+      ruleVersion: v.number(),
+      totals: v.optional(
+        v.object({
+          employees: v.number(),
+          gross: v.number(),
+          net: v.number(),
+          paye: v.number(),
+          nssf: v.number(),
+          shif: v.number(),
+          ahl: v.number(),
+          employerCost: v.number(),
+        }),
+      ),
+      validationReport: v.optional(
+        v.object({
+          processed: v.number(),
+          successful: v.number(),
+          warnings: v.number(),
+          blockingErrors: v.number(),
+          messages: v.array(v.string()),
+        }),
+      ),
+      approvedBy: v.optional(v.string()),
+      approvedAt: v.optional(v.number()),
+      lockedBy: v.optional(v.string()),
+      lockedAt: v.optional(v.number()),
+      journalRef: v.optional(v.string()),
+    }).index("by_label", ["periodLabel"]),
+
+    // Payslips — immutable once the period is locked (spec §45)
+    payslips: defineTable({
+      periodId: v.id("payrollPeriods"),
+      periodLabel: v.string(),
+      employeeId: v.id("employees"),
+      employeeNumber: v.string(),
+      reference: v.string(), // unique payslip reference
+      grossPay: v.number(),
+      taxablePay: v.number(),
+      paye: v.number(),
+      nssf: v.number(),
+      shif: v.number(),
+      ahl: v.number(),
+      totalDeductions: v.number(),
+      netPay: v.number(),
+      employerCost: v.number(),
+      lines: v.array(
+        v.object({
+          code: v.string(),
+          label: v.string(),
+          amount: v.number(),
+          type: v.string(),
+          source: v.string(),
+        }),
+      ),
+      warnings: v.array(v.string()),
+    })
+      .index("by_period", ["periodId"])
+      .index("by_reference", ["reference"])
+      .index("by_employee", ["employeeId"]),
   },
   {
     schemaValidation: false,

@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useSeedOnce } from "@/hooks/use-seed-once";
+// payroll trend comes from processed runs (api.payroll.periods)
 import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,15 +83,23 @@ function KpiCard({
 export default function Dashboard() {
   const { user } = useAuth();
   const summary = useQuery(api.employees.summary, {});
+  const payrollPeriods = useQuery(api.payroll.periods, {});
   useSeedOnce();
 
   const trendData = useMemo(() => {
+    // Prefer actual processed payroll runs (traceable totals) when available
+    const real = (payrollPeriods ?? [])
+      .filter((p) => p.totals && p.totals.employees > 0)
+      .sort((a, b) => a.periodLabel.localeCompare(b.periodLabel))
+      .slice(-6)
+      .map((p) => ({ month: p.periodLabel.slice(2), cost: Math.round(p.totals!.gross) }));
+    if (real.length > 0) return real;
     if (!summary) return [];
     return summary.months.map((m) => ({
       month: m.label,
       cost: Math.round(m.cost),
     }));
-  }, [summary]);
+  }, [summary, payrollPeriods]);
 
   const statusMix = useMemo(() => {
     if (!summary) return [];

@@ -212,17 +212,19 @@ export default function Landing() {
                 Version 1 scope
               </Badge>
               <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-                Built first for what matters: employee records.
+                Employee records and payroll, done right.
               </h2>
               <p className="mt-4 text-sm leading-relaxed text-muted-foreground sm:text-base">
-                One HR team. Canonical employee master data with departments,
-                contracts, compensation and a full change history — and the
-                must-have view on the main screen: headcount and cost, live.
+                One HR team. Canonical employee master data, departments,
+                contracts and full change history — plus a Kenyan statutory
+                payroll engine with versioned rules, validation gates, immutable
+                locked periods and accounting journals.
               </p>
               <ul className="mt-6 space-y-3 text-sm">
                 {[
                   "Employee master records with canonical data",
                   "Headcount & monthly cost summary up front",
+                  "Kenyan statutory payroll: PAYE, NSSF, SHIF, AHL",
                   "Immutable history for every consequential change",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-2.5">
@@ -245,6 +247,7 @@ export default function Landing() {
                 { icon: Users, label: "Headcount", value: "Live, per department" },
                 { icon: BarChart3, label: "Monthly cost", value: "KES gross payroll" },
                 { icon: FileClock, label: "Change history", value: "Event log, effective-dated" },
+                { icon: ShieldCheck, label: "Payroll", value: "PAYE · NSSF · SHIF · AHL" },
               ].map((row) => (
                 <div key={row.label} className="flex items-center gap-3 rounded-xl bg-white/55 p-3.5">
                   <div className="flex size-9 items-center justify-center rounded-lg bg-primary/12 text-primary">

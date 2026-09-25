@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { mutation } from "./_generated/server";
+import { KENYA_STATUTORY_RULES_V1, calcEmployeePayroll } from "../lib/payroll-engine";
 
 /** One-time demo seed for the single-tenant HR team (idempotent). */
 export const seedIfEmpty = mutation({
@@ -125,6 +126,96 @@ export const seedIfEmpty = mutation({
       newValue: "offboarded",
       actorName: "Mary Achieng",
     });
+
+    // ---------------- Payroll seed (v1.1) ----------------
+    // Versioned statutory rule package (BR-007)
+    await ctx.db.insert("statutoryRules", {
+      version: KENYA_STATUTORY_RULES_V1.version,
+      jurisdiction: KENYA_STATUTORY_RULES_V1.jurisdiction,
+      effectiveFrom: KENYA_STATUTORY_RULES_V1.effectiveFrom,
+      packageJson: JSON.stringify(KENYA_STATUTORY_RULES_V1),
+    });
+
+    // Three historical payroll periods, calculated + approved + locked,
+    // derived from the SAME engine the app uses at runtime.
+    const allDepts = await ctx.db.query("departments").collect();
+    const deptNameMap = new Map(allDepts.map((d) => [d._id, d.name]));
+    const staff = empDefs
+      .filter((e) => e.status !== "offboarded")
+      .map((e, i) => ({
+        ...e,
+        employeeNumber: `KIF-${String(i + 1).padStart(4, "0")}`,
+        departmentName: deptNameMap.get(deptIds[e.dept]) ?? "—",
+        _id: empIdByCode[e.email],
+      }));
+
+    const now = new Date();
+    for (let back = 3; back >= 1; back--) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1));
+      const label = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      const endISO = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0))
+        .toISOString()
+        .slice(0, 10);
+
+      const calcs = staff.map((e) =>
+        calcEmployeePayroll(
+          {
+            _id: e._id,
+            employeeNumber: e.employeeNumber,
+            firstName: e.firstName,
+            lastName: e.lastName,
+            jobTitle: e.jobTitle,
+            employmentType: e.employmentType,
+            status: e.status,
+            monthlyGrossSalary: e.monthlyGrossSalary,
+            departmentName: e.departmentName,
+          },
+          KENYA_STATUTORY_RULES_V1,
+        ),
+      );
+      const periodId = await ctx.db.insert("payrollPeriods", {
+        periodLabel: label,
+        startDate: `${label}-01`,
+        endDate: endISO,
+        payDate: endISO,
+        frequency: "monthly" as const,
+        status: "LOCKED" as const,
+        ruleVersion: KENYA_STATUTORY_RULES_V1.version,
+        totals: undefined,
+        validationReport: {
+          processed: calcs.length,
+          successful: calcs.length,
+          warnings: calcs.filter((c) => c.warnings.length > 0).length,
+          blockingErrors: 0,
+          messages: [],
+        },
+        approvedBy: "Peter Kamau",
+        lockedBy: "Peter Kamau",
+        lockedAt: Date.now(),
+        journalRef: `JV-${label}-SEED${back}`, 
+      });
+
+      for (const c of calcs) {
+        await ctx.db.insert("payslips", {
+          periodId,
+          periodLabel: label,
+          employeeId: c.employeeId as never,
+          employeeNumber: c.employeeNumber,
+          reference: `PS-${label}-${c.employeeNumber}`,
+          grossPay: c.grossPay,
+          taxablePay: c.taxablePay,
+          paye: c.paye,
+          nssf: c.nssfEmployee,
+          shif: c.shif,
+          ahl: c.ahl,
+          totalDeductions: c.totalDeductions,
+          netPay: c.netPay,
+          employerCost: c.employerCost,
+          lines: c.lines,
+          warnings: c.warnings,
+        });
+      }
+    }
 
     return { seeded: true as const };
   },

@@ -92,6 +92,29 @@ export const copilotContext = internalQuery({
         recordedBy: ev.actorName ?? null,
       }));
 
+    // Payroll history (spec §50): actual processed periods
+    const periods = await ctx.db.query("payrollPeriods").collect();
+    const slips = await ctx.db.query("payslips").collect();
+    const payrollHistory = periods
+      .sort((a, b) => a.periodLabel.localeCompare(b.periodLabel))
+      .map((p) => {
+        const ps = slips.filter((s) => s.periodId === p._id);
+        const t = (f: (s: (typeof slips)[number]) => number) =>
+          Math.round(ps.reduce((s, x) => s + f(x), 0));
+        return {
+          period: p.periodLabel,
+          status: p.status,
+          employeesPaid: ps.length,
+          grossKES: t((s) => s.grossPay),
+          netKES: t((s) => s.netPay),
+          payeKES: t((s) => s.paye),
+          nssfKES: t((s) => s.nssf),
+          shifKES: t((s) => s.shif),
+          ahlKES: t((s) => s.ahl),
+          employerCostKES: t((s) => s.employerCost),
+        };
+      });
+
     return {
       asOfDate: todayISO(),
       currency: "KES",
@@ -122,6 +145,7 @@ export const copilotContext = internalQuery({
       departments: departmentsCtx,
       employees: employeesCtx,
       recentEvents,
+      payrollHistory,
     };
   },
 });
