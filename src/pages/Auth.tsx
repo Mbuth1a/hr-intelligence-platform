@@ -35,7 +35,7 @@ function resolveRedirectAfterAuth(
 }
 
 function Auth({ redirectAfterAuth }: AuthProps = {}) {
-  const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
+  const { isLoading: authLoading, isAuthenticated, signIn, user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = resolveRedirectAfterAuth(
@@ -48,10 +48,17 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!authLoading && isAuthenticated) {
-      navigate(redirect);
+    if (authLoading || !isAuthenticated) return;
+    if (user === undefined) return; // wait for the user document to load
+
+    // Linked employees go straight to their own dashboard unless a specific
+    // returnTo destination was requested (spec §35 — employee self-service).
+    if (user && user.employeeId && !searchParams.get("returnTo")) {
+      navigate("/my", { replace: true });
+      return;
     }
-  }, [authLoading, isAuthenticated, navigate, redirect]);
+    navigate(redirect, { replace: true });
+  }, [authLoading, isAuthenticated, user, navigate, redirect, searchParams]);
   const handleEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsLoading(true);
@@ -79,10 +86,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     try {
       const formData = new FormData(event.currentTarget);
       await signIn("email-otp", formData);
-
-      console.log("signed in");
-
-      navigate(redirect);
+      // Routing is handled by the effect above once the user doc loads.
     } catch (error) {
       console.error("OTP verification error:", error);
 
@@ -100,7 +104,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       console.log("Attempting anonymous sign in...");
       await signIn("anonymous");
       console.log("Anonymous sign in successful");
-      navigate(redirect);
+      // Routing is handled by the effect above once the user doc loads.
     } catch (error) {
       console.error("Guest login error:", error);
       console.error("Error details:", JSON.stringify(error, null, 2));

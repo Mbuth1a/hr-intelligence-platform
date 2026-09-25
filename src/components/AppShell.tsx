@@ -49,7 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5 sm:pt-4">
         <div className="glass-strong mx-auto flex max-w-7xl items-center justify-between rounded-2xl px-4 py-2.5 sm:px-5">
-          <Link to="/dashboard" className="flex items-center gap-2.5">
+          <Link to={user?.employeeId ? "/my" : "/dashboard"} className="flex items-center gap-2.5">
             <img
               src={kifaruLogo}
               alt="Kifaru"
@@ -66,17 +66,32 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
 
           <nav className="flex items-center gap-1.5">
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 rounded-xl text-muted-foreground hover:text-foreground"
-            >
-              <Link to="/dashboard">
-                <Users className="size-4" />
-                Overview
-              </Link>
-            </Button>
+            {user?.employeeId && (
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 rounded-xl text-primary"
+              >
+                <Link to="/my">
+                  <CalendarCheck className="size-4" />
+                  My dashboard
+                </Link>
+              </Button>
+            )}
+            {!user?.employeeId && (
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 rounded-xl text-muted-foreground hover:text-foreground"
+              >
+                <Link to="/dashboard">
+                  <Users className="size-4" />
+                  Overview
+                </Link>
+              </Button>
+            )}
             <Button
               asChild
               variant="ghost"
@@ -133,7 +148,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
-                  <Link to="/dashboard">Overview</Link>
+                  <Link to={user?.employeeId ? "/my" : "/dashboard"}>
+                    {user?.employeeId ? "My dashboard" : "Company overview"}
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/employees">Employee records</Link>
