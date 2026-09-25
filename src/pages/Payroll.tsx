@@ -313,7 +313,18 @@ export default function Payroll() {
                   {(payslips ?? []).map((s) => (
                     <TableRow key={s._id} className="cursor-pointer" onClick={() => setPayslipOpen(s._id)}>
                       <TableCell className="pl-5">
-                        <p className="font-medium">{s.employeeNumber}</p>
+                        <div className="flex items-center gap-3">
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[oklch(0.5_0.1_230_/_0.18)] to-[oklch(0.6_0.09_190_/_0.18)] text-[10px] font-bold text-primary">
+                            {s.employeeName.split(" ").map((p) => p[0]).slice(0, 2).join("")}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{s.employeeName}</p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {s.employeeNumber}
+                              {s.jobTitle ? ` · ${s.jobTitle}` : ""}
+                            </p>
+                          </div>
+                        </div>
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">{s.reference}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatKES(s.grossPay)}</TableCell>
@@ -365,8 +376,10 @@ export default function Payroll() {
             return (
               <>
                 <DialogHeader>
-                  <DialogTitle>Payslip {slip.reference}</DialogTitle>
-                  <DialogDescription>Period {slip.periodLabel} · unique reference, traceable inputs</DialogDescription>
+                  <DialogTitle>{slip.employeeName} — {slip.reference}</DialogTitle>
+                  <DialogDescription>
+                    {slip.employeeNumber}{slip.jobTitle ? ` · ${slip.jobTitle}` : ""} · Period {slip.periodLabel} · unique reference, traceable inputs
+                  </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">
                   {slip.lines.map((l) => (

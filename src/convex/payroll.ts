@@ -66,7 +66,7 @@ export const periods = query({
   },
 });
 
-/** Payslips of one period. */
+/** Payslips of one period, enriched with the employee's name and role. */
 export const periodPayslips = query({
   args: { periodId: v.id("payrollPeriods") },
   handler: async (ctx, args) => {
@@ -75,7 +75,18 @@ export const periodPayslips = query({
       .query("payslips")
       .withIndex("by_period", (q) => q.eq("periodId", args.periodId))
       .collect();
-    return slips.sort((a, b) => a.employeeNumber.localeCompare(b.employeeNumber));
+    const employees = await ctx.db.query("employees").collect();
+    const byId = new Map(employees.map((e) => [e._id, e]));
+    return slips
+      .map((s) => {
+        const e = byId.get(s.employeeId);
+        return {
+          ...s,
+          employeeName: e ? `${e.firstName} ${e.lastName}` : "(ex-employee)",
+          jobTitle: e?.jobTitle ?? "",
+        };
+      })
+      .sort((a, b) => a.employeeNumber.localeCompare(b.employeeNumber));
   },
 });
 
