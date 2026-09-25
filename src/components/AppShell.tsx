@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { CopilotPanel } from "@/components/CopilotPanel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,8 +11,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import kifaruLogo from "@/assets/kifaru-logo.svg";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Users } from "lucide-react";
+import { LogOut, Sparkles, Users } from "lucide-react";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 
 function GlassBackground() {
@@ -27,6 +29,7 @@ function GlassBackground() {
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
@@ -131,6 +134,28 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-7xl px-3 pb-14 pt-6 sm:px-5">
         {children}
       </main>
+
+      {/* Floating AI copilot trigger */}
+      <button
+        onClick={() => setCopilotOpen(true)}
+        className="glass-strong fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-primary transition hover:scale-[1.03]"
+      >
+        <Sparkles className="size-4" />
+        <span className="hidden sm:inline">Ask Kifaru AI</span>
+      </button>
+
+      {copilotOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end p-3 sm:items-center sm:p-6">
+          <button
+            aria-label="Close copilot"
+            className="absolute inset-0 bg-[oklch(0.3_0.03_245_/_0.18)] backdrop-blur-[2px]"
+            onClick={() => setCopilotOpen(false)}
+          />
+          <div className="relative h-[80vh] max-h-[720px] w-full max-w-md">
+            <CopilotPanel onClose={() => setCopilotOpen(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
