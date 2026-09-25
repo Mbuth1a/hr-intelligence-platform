@@ -32,12 +32,14 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DepartmentsPanel } from "@/components/DepartmentsPanel";
 import { Textarea } from "@/components/ui/textarea";
 import { EMPLOYEE_STATUS_LABELS, EMPLOYMENT_TYPE_LABELS, EVENT_TYPE_LABELS, formatDate, formatKES } from "@/lib/format";
 import { useEffect } from "react";
 import {
   ArrowUpRight,
   CalendarDays,
+  Download,
   Loader2,
   Plus,
   Search,
@@ -586,16 +588,73 @@ export default function Employees() {
             Canonical employee data — one source of truth for the organization.
           </p>
         </div>
-        <Button
-          className="rounded-xl"
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          <Plus className="size-4" />
-          Add employee
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            className="glass-subtle rounded-xl"
+            onClick={() => {
+              const rows = [
+                [
+                  "EmployeeNumber",
+                  "FirstName",
+                  "LastName",
+                  "Email",
+                  "Phone",
+                  "JobTitle",
+                  "Department",
+                  "EmploymentType",
+                  "Status",
+                  "HireDate",
+                  "ExitDate",
+                  "MonthlyGrossSalary",
+                  "Manager",
+                  "Location",
+                ].join(","),
+                ...employees.map((e) =>
+                  [
+                    e.employeeNumber,
+                    e.firstName,
+                    e.lastName,
+                    e.email,
+                    e.phone ?? "",
+                    e.jobTitle,
+                    departments.find((d) => d._id === e.departmentId)?.name ?? "",
+                    e.employmentType,
+                    e.status,
+                    e.hireDate,
+                    e.exitDate ?? "",
+                    e.monthlyGrossSalary,
+                    e.managerName ?? "",
+                    e.location ?? "",
+                  ]
+                    .map((v) => (String(v).includes(",") ? `"${v}"` : String(v)))
+                    .join(","),
+                ),
+              ].join("\n");
+              const blob = new Blob([rows], { type: "text/csv;charset=utf-8" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `kifaru-employees-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+              toast.success(`Exported ${employees.length} employee records.`);
+            }}
+          >
+            <Download className="size-4" />
+            Export CSV
+          </Button>
+          <Button
+            className="rounded-xl"
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus className="size-4" />
+            Add employee
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -722,6 +781,11 @@ export default function Employees() {
       <p className="mt-3 text-xs text-muted-foreground">
         {employees.length} record{employees.length === 1 ? "" : "s"} · salary, role, department and manager changes are recorded in the employee&apos;s immutable history.
       </p>
+
+      {/* Departments management section */}
+      <div className="mt-10 border-t border-white/50 pt-8">
+        <DepartmentsPanel />
+      </div>
 
       <EmployeeFormDialog
         open={formOpen}
