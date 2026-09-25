@@ -49,6 +49,7 @@ import {
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Link } from "react-router";
+import { TrendingUp } from "lucide-react";
 
 type Employee = Doc<"employees">;
 type Department = Doc<"departments">;
@@ -589,6 +590,12 @@ export default function Employees() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button asChild variant="outline" className="glass-subtle rounded-xl">
+            <Link to="/employees/dashboard">
+              <TrendingUp className="size-4" />
+              Dashboard
+            </Link>
+          </Button>
           <Button
             variant="outline"
             className="glass-subtle rounded-xl"

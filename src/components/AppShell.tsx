@@ -83,7 +83,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               size="sm"
               className="gap-1.5 rounded-xl text-muted-foreground hover:text-foreground"
             >
-              <Link to="/employees">
+              <Link to="/employees/dashboard">
                 <Users className="size-4" />
                 Employees
               </Link>

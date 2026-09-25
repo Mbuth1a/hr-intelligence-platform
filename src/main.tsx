@@ -16,6 +16,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const Employees = lazy(() => import("./pages/Employees.tsx"));
 const Payroll = lazy(() => import("./pages/Payroll.tsx"));
 const MyWorkspace = lazy(() => import("./pages/MyWorkspace.tsx"));
+const EmployeesDashboard = lazy(() => import("./pages/EmployeesDashboard.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 // Simple loading fallback for route transitions
@@ -140,6 +141,14 @@ createRoot(document.getElementById("root")!).render(
                 element={
                   <RequireAuth>
                     <Employees />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/employees/dashboard"
+                element={
+                  <RequireAuth>
+                    <EmployeesDashboard />
                   </RequireAuth>
                 }
               />

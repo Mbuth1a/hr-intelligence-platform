@@ -101,6 +101,149 @@ export const get = query({
 });
 
 /**
+ * Employees-module dashboard aggregates: movement, tenure, contracts, anniversaries.
+ */
+export const dashboard = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Unauthenticated");
+
+    const all = await ctx.db.query("employees").collect();
+    const current = all.filter(countsTowardHeadcount);
+
+    // 12-month movement: hires and exits per month
+    const months: { label: string; hires: number; exits: number }[] = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      const label = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      const monthStart = `${label}-01`;
+      const monthEnd = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0))
+        .toISOString()
+        .slice(0, 10);
+      months.push({
+        label,
+        hires: all.filter((e) => e.hireDate >= monthStart && e.hireDate <= monthEnd).length,
+        exits: all.filter(
+          (e) => e.exitDate && e.exitDate >= monthStart && e.exitDate <= monthEnd,
+        ).length,
+      });
+    }
+
+    // Tenure buckets (years)
+    const tenureYears = (e: Doc<"employees">) =>
+      monthsOfService(e.hireDate, e.exitDate) / 12;
+    const tenureBuckets = {
+      "0-1": current.filter((e) => tenureYears(e) < 1).length,
+      "1-3": current.filter((e) => tenureYears(e) >= 1 && tenureYears(e) < 3).length,
+      "3-5": current.filter((e) => tenureYears(e) >= 3 && tenureYears(e) < 5).length,
+      "5+": current.filter((e) => tenureYears(e) >= 5).length,
+    };
+
+    // Salary stats (current staff)
+    const salaries = current.map((e) => e.monthlyGrossSalary).sort((a, b) => a - b);
+    const salaryStats = {
+      min: salaries[0] ?? 0,
+      max: salaries[salaries.length - 1] ?? 0,
+      avg: salaries.length
+        ? Math.round(salaries.reduce((s, x) => s + x, 0) / salaries.length)
+        : 0,
+      median: salaries.length
+        ? salaries[Math.floor(salaries.length / 2)]
+        : 0,
+    };
+
+    // Locations
+    const locationsMap = new Map<string, number>();
+    for (const e of current) {
+      const key = e.location ?? "Unspecified";
+      locationsMap.set(key, (locationsMap.get(key) ?? 0) + 1);
+    }
+    const byLocation = [...locationsMap.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
+    // Recent hires (last 90 days)
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - 90);
+    const cutoffISO = cutoff.toISOString().slice(0, 10);
+    const recentHires = current
+      .filter((e) => e.hireDate >= cutoffISO)
+      .sort((a, b) => b.hireDate.localeCompare(a.hireDate))
+      .slice(0, 6)
+      .map((e) => ({
+        name: `${e.firstName} ${e.lastName}`,
+        employeeNumber: e.employeeNumber,
+        jobTitle: e.jobTitle,
+        hireDate: e.hireDate,
+        status: e.status,
+      }));
+
+    // Upcoming anniversaries (within 45 days)
+    const dayMs = 24 * 60 * 60 * 1000;
+    const today = new Date(todayISO() + "T00:00:00Z");
+    const upcoming = all
+      .filter((e) => e.status !== "offboarded")
+      .map((e) => {
+        const hire = new Date(e.hireDate + "T00:00:00Z");
+        let anniv = new Date(
+          Date.UTC(
+            today.getUTCFullYear(),
+            hire.getUTCMonth(),
+            hire.getUTCDate(),
+          ),
+        );
+        if (anniv.getTime() < today.getTime()) {
+          anniv = new Date(
+            Date.UTC(
+              today.getUTCFullYear() + 1,
+              hire.getUTCMonth(),
+              hire.getUTCDate(),
+            ),
+          );
+        }
+        const daysAway = Math.round((anniv.getTime() - today.getTime()) / dayMs);
+        const years = today.getUTCFullYear() - hire.getUTCFullYear();
+        return {
+          name: `${e.firstName} ${e.lastName}`,
+          employeeNumber: e.employeeNumber,
+          years,
+          date: anniv.toISOString().slice(0, 10),
+          daysAway,
+        };
+      })
+      .filter((a) => a.daysAway <= 45)
+      .sort((a, b) => a.daysAway - b.daysAway)
+      .slice(0, 6);
+
+    // Probation watch
+    const probation = current
+      .filter((e) => e.status === "probation")
+      .map((e) => ({
+        name: `${e.firstName} ${e.lastName}`,
+        employeeNumber: e.employeeNumber,
+        jobTitle: e.jobTitle,
+        hireDate: e.hireDate,
+        monthsIn: monthsOfService(e.hireDate),
+      }))
+      .sort((a, b) => b.monthsIn - a.monthsIn);
+
+    return {
+      headcount: current.length,
+      offboardedCount: all.length - current.length,
+      months,
+      tenureBuckets,
+      salaryStats,
+      byLocation,
+      recentHires,
+      upcomingAnniversaries: upcoming,
+      probation,
+    };
+  },
+});
+
+/**
  * Headcount & cost summary — the must-have main-screen metric.
  * headcount = employees not offboarded; monthly cost = sum of their gross salary.
  */
